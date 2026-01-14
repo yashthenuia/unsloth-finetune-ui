@@ -67,6 +67,7 @@ dataset = dataset.map(lambda x: {
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=MODEL,
     max_seq_length=2048,
+    dtype=dtype,
     load_in_4bit=True,
 )
 
@@ -91,8 +92,11 @@ training_args = TrainingArguments(
     per_device_train_batch_size=BATCH_SIZE,
     gradient_accumulation_steps=4,
     num_train_epochs=EPOCHS,
+    warmup_steps=5,
+    max_steps=60,
     learning_rate=LR,
-    fp16=True,
+    fp16=not torch.cuda.is_bf16_supported(),
+    bf16=torch.cuda.is_bf16_supported(),
     logging_steps=1,
     optim="adamw_8bit",
     weight_decay=0.01,
@@ -107,8 +111,7 @@ trainer = SFTTrainer(
     tokenizer=tokenizer,
     train_dataset=dataset,
     dataset_text_field="text",
-    max_seq_length=2048,   # 🔑 REQUIRED
-    packing=False,  
+    max_seq_length=2048,   # 🔑 REQUIRED 
     args=training_args,
 )
 
