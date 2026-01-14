@@ -73,8 +73,15 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 FastLanguageModel.get_peft_model(
     model,
     r=16,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                    "gate_proj", "up_proj", "down_proj"],
     lora_alpha=16,
-    lora_dropout=0.05,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+    random_state=3407,
+    use_rslora=False,
+    loftq_config=None,
 )
 
 # ==============================
@@ -87,6 +94,11 @@ training_args = TrainingArguments(
     learning_rate=LR,
     fp16=True,
     logging_steps=10,
+    logging_steps=1,
+    optim="adamw_8bit",
+    weight_decay=0.01,
+    lr_scheduler_type="linear",
+    
     output_dir="outputs",
     report_to="none",
 )
@@ -96,6 +108,7 @@ trainer = SFTTrainer(
     tokenizer=tokenizer,
     train_dataset=dataset,
     dataset_text_field="text",
+    max_seq_length=max_seq_length,
     args=training_args,
 )
 
