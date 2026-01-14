@@ -107,6 +107,8 @@ trainer = SFTTrainer(
     tokenizer=tokenizer,
     train_dataset=dataset,
     dataset_text_field="text",
+    max_seq_length=2048,   # 🔑 REQUIRED
+    packing=False,  
     args=training_args,
 )
 
