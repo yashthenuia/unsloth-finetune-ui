@@ -5,53 +5,46 @@ from datasets import Dataset
 from unsloth import FastLanguageModel
 from trl import SFTTrainer
 from transformers import TrainingArguments
-from google.colab import files
 
 # ==============================
-# 1. Read config from env vars
+# 1. Read config
 # ==============================
 MODEL = os.getenv("MODEL_CHOICE")
 EPOCHS = int(os.getenv("EPOCHS", 1))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 1))
 LR = float(os.getenv("LR", 2e-4))
-MAX_SEQ_LENGTH = 2048
+DATA_FILE = os.getenv("DATA_FILE")
 
-if MODEL is None:
-    raise ValueError("MODEL_CHOICE env var not set")
+if MODEL is None or DATA_FILE is None:
+    raise ValueError("MODEL_CHOICE or DATA_FILE not set")
 
 print("Using config:")
 print("Model:", MODEL)
 print("Epochs:", EPOCHS)
 print("Batch size:", BATCH_SIZE)
 print("Learning rate:", LR)
+print("Data file:", DATA_FILE)
 
 # ==============================
-# 2. Upload dataset
+# 2. Load dataset
 # ==============================
-print("\n📁 Upload your dataset (CSV / TXT / JSONL)")
-uploaded = files.upload()
-file_name = list(uploaded.keys())[0]
-
-# ==============================
-# 3. Load dataset
-# ==============================
-if file_name.endswith(".csv"):
-    df = pd.read_csv(file_name)
-elif file_name.endswith(".txt"):
+if DATA_FILE.endswith(".csv"):
+    df = pd.read_csv(DATA_FILE)
+elif DATA_FILE.endswith(".txt"):
     df = pd.read_csv(
-        file_name,
+        DATA_FILE,
         sep="\t",
         names=["instruction", "input", "output"]
     )
-elif file_name.endswith(".jsonl"):
-    df = pd.read_json(file_name, lines=True)
+elif DATA_FILE.endswith(".jsonl"):
+    df = pd.read_json(DATA_FILE, lines=True)
 else:
     raise ValueError("Unsupported file format")
 
 print("Dataset loaded:", df.shape)
 
 # ==============================
-# 4. Format prompts
+# 3. Format prompts
 # ==============================
 def format_prompt(row):
     return f"""### Instruction:
@@ -69,11 +62,11 @@ dataset = dataset.map(lambda x: {
 })
 
 # ==============================
-# 5. Load model with Unsloth
+# 4. Load model
 # ==============================
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=MODEL,
-    max_seq_length=MAX_SEQ_LENGTH,
+    max_seq_length=2048,
     load_in_4bit=True,
 )
 
@@ -85,7 +78,7 @@ FastLanguageModel.get_peft_model(
 )
 
 # ==============================
-# 6. Train
+# 5. Train
 # ==============================
 training_args = TrainingArguments(
     per_device_train_batch_size=BATCH_SIZE,
@@ -109,11 +102,10 @@ trainer = SFTTrainer(
 trainer.train()
 
 # ==============================
-# 7. Merge + save model
+# 6. Merge & save
 # ==============================
 FastLanguageModel.merge_and_unload(model)
 model.save_pretrained("merged_model")
 tokenizer.save_pretrained("merged_model")
 
-print("\n✅ Training complete!")
-print("📦 Download the merged_model folder")
+print("\n✅ Training complete")
