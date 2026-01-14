@@ -67,7 +67,7 @@ dataset = dataset.map(lambda x: {
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=MODEL,
     max_seq_length=2048,
-    dtype=dtype,
+    dtype = torch.float16,
     load_in_4bit=True,
 )
 
