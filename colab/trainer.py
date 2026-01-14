@@ -93,7 +93,6 @@ training_args = TrainingArguments(
     num_train_epochs=EPOCHS,
     learning_rate=LR,
     fp16=True,
-    logging_steps=10,
     logging_steps=1,
     optim="adamw_8bit",
     weight_decay=0.01,
