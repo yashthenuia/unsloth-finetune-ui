@@ -121,8 +121,10 @@ trainer.train()
 # ==============================
 # 6. Merge & save
 # ==============================
-FastLanguageModel.merge_and_unload(model)
+model = FastLanguageModel.merge_lora(model)
+
 model.save_pretrained("merged_model")
 tokenizer.save_pretrained("merged_model")
 
-print("\n✅ Training complete")
+print("✅ Model merged and saved to ./merged_model")
+
