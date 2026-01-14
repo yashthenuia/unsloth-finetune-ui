@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from datasets import Dataset
 from unsloth import FastLanguageModel
-from unsloth.trainer import SFTTrainer
+from trl import SFTTrainer
 from transformers import TrainingArguments
 
 # ==============================
