@@ -1,101 +1,119 @@
-import argparse
 import os
-from datasets import load_dataset
+import torch
+import pandas as pd
+from datasets import Dataset
 from unsloth import FastLanguageModel
 from trl import SFTTrainer
+from transformers import TrainingArguments
 from google.colab import files
 
-# -----------------------------
-# Parse args
-# -----------------------------
-parser = argparse.ArgumentParser()
-parser.add_argument("--model", type=str, required=True)
-parser.add_argument("--epochs", type=int, default=1)
-parser.add_argument("--batch_size", type=int, default=2)
-parser.add_argument("--lr", type=float, default=2e-4)
-parser.add_argument("--max_seq_length", type=int, default=2048)
+# ==============================
+# 1. Read config from env vars
+# ==============================
+MODEL = os.getenv("MODEL_CHOICE")
+EPOCHS = int(os.getenv("EPOCHS", 1))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 1))
+LR = float(os.getenv("LR", 2e-4))
+MAX_SEQ_LENGTH = 2048
 
-args = parser.parse_args()
+if MODEL is None:
+    raise ValueError("MODEL_CHOICE env var not set")
 
-# -----------------------------
-# Upload dataset
-# -----------------------------
-print("📂 Upload CSV file (instruction, output)")
+print("Using config:")
+print("Model:", MODEL)
+print("Epochs:", EPOCHS)
+print("Batch size:", BATCH_SIZE)
+print("Learning rate:", LR)
+
+# ==============================
+# 2. Upload dataset
+# ==============================
+print("\n📁 Upload your dataset (CSV / TXT / JSONL)")
 uploaded = files.upload()
 file_name = list(uploaded.keys())[0]
 
-# -----------------------------
-# Load dataset
-# -----------------------------
-dataset = load_dataset("csv", data_files=file_name, split="train")
+# ==============================
+# 3. Load dataset
+# ==============================
+if file_name.endswith(".csv"):
+    df = pd.read_csv(file_name)
+elif file_name.endswith(".txt"):
+    df = pd.read_csv(
+        file_name,
+        sep="\t",
+        names=["instruction", "input", "output"]
+    )
+elif file_name.endswith(".jsonl"):
+    df = pd.read_json(file_name, lines=True)
+else:
+    raise ValueError("Unsupported file format")
 
-def format_prompt(example):
-    return {
-        "text": f"""### Instruction:
-{example['instruction']}
+print("Dataset loaded:", df.shape)
+
+# ==============================
+# 4. Format prompts
+# ==============================
+def format_prompt(row):
+    return f"""### Instruction:
+{row['instruction']}
+
+### Input:
+{row['input']}
 
 ### Response:
-{example['output']}"""
-    }
+{row['output']}"""
 
-dataset = dataset.map(format_prompt)
+dataset = Dataset.from_pandas(df)
+dataset = dataset.map(lambda x: {
+    "text": format_prompt(x)
+})
 
-# -----------------------------
-# Load model (Unsloth)
-# -----------------------------
+# ==============================
+# 5. Load model with Unsloth
+# ==============================
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name=args.model,
-    max_seq_length=args.max_seq_length,
-    load_in_4bit=True
+    model_name=MODEL,
+    max_seq_length=MAX_SEQ_LENGTH,
+    load_in_4bit=True,
 )
 
-# -----------------------------
-# Apply LoRA
-# -----------------------------
-model = FastLanguageModel.get_peft_model(
+FastLanguageModel.get_peft_model(
     model,
     r=16,
     lora_alpha=16,
     lora_dropout=0.05,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
 )
 
-# -----------------------------
-# Train
-# -----------------------------
+# ==============================
+# 6. Train
+# ==============================
+training_args = TrainingArguments(
+    per_device_train_batch_size=BATCH_SIZE,
+    gradient_accumulation_steps=4,
+    num_train_epochs=EPOCHS,
+    learning_rate=LR,
+    fp16=True,
+    logging_steps=10,
+    output_dir="outputs",
+    report_to="none",
+)
+
 trainer = SFTTrainer(
     model=model,
     tokenizer=tokenizer,
     train_dataset=dataset,
     dataset_text_field="text",
-    max_seq_length=args.max_seq_length,
-    args=dict(
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=4,
-        num_train_epochs=args.epochs,
-        learning_rate=args.lr,
-        fp16=True,
-        output_dir="outputs",
-        logging_steps=10
-    )
+    args=training_args,
 )
 
 trainer.train()
 
-# -----------------------------
-# 🔥 MERGE LoRA
-# -----------------------------
-model = model.merge_and_unload()
-
-# -----------------------------
-# Save merged model
-# -----------------------------
-os.makedirs("merged_model", exist_ok=True)
+# ==============================
+# 7. Merge + save model
+# ==============================
+FastLanguageModel.merge_and_unload(model)
 model.save_pretrained("merged_model")
 tokenizer.save_pretrained("merged_model")
 
-# -----------------------------
-# Zip & Download
-# -----------------------------
-os.system("zip -r merged_model.zip merged_model")
-files.download("merged_model.zip")
+print("\n✅ Training complete!")
+print("📦 Download the merged_model folder")
