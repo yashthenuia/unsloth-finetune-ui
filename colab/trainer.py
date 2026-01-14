@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from datasets import Dataset
 from unsloth import FastLanguageModel
-from trl import SFTTrainer
+from unsloth.trainer import SFTTrainer
 from transformers import TrainingArguments
 
 # ==============================
@@ -91,7 +91,6 @@ FastLanguageModel.get_peft_model(
 training_args = TrainingArguments(
     per_device_train_batch_size=BATCH_SIZE,
     gradient_accumulation_steps=4,
-    num_train_epochs=EPOCHS,
     warmup_steps=5,
     max_steps=60,
     learning_rate=LR,
@@ -115,6 +114,8 @@ trainer = SFTTrainer(
     args=training_args,
 )
 
+
+model.print_trainable_parameters()
 trainer.train()
 
 # ==============================
