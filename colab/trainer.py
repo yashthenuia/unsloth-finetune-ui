@@ -1,104 +1,101 @@
-# colab/trainer.py
+import argparse
 import os
-import json
-import pandas as pd
-import torch
-import shutil
+from datasets import load_dataset
+from unsloth import FastLanguageModel
+from trl import SFTTrainer
 from google.colab import files
-from unsloth import FastLanguageModel, Trainer
 
-# -------------------------
-# 0️⃣ Hyperparameters from env (or defaults)
-# -------------------------
-BASE_MODELS = {
-    "unsloth/Phi-3-mini-4k-instruct": "unsloth/Phi-3-mini-4k-instruct",
-    "unsloth/TinyLlama-1.1B": "unsloth/TinyLlama-1.1B",
-    "unsloth/gemma-2b-it": "unsloth/gemma-2b-it"
-}
+# -----------------------------
+# Parse args
+# -----------------------------
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", type=str, required=True)
+parser.add_argument("--epochs", type=int, default=1)
+parser.add_argument("--batch_size", type=int, default=2)
+parser.add_argument("--lr", type=float, default=2e-4)
+parser.add_argument("--max_seq_length", type=int, default=2048)
 
-MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "unsloth/Phi-3-mini-4k-instruct")
-EPOCHS = int(os.environ.get("EPOCHS", 1))
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 2))
-LR = float(os.environ.get("LR", 2e-4))
+args = parser.parse_args()
 
-# -------------------------
-# 1️⃣ GPU Check
-# -------------------------
-if not torch.cuda.is_available():
-    raise RuntimeError("❌ GPU not detected. Enable GPU in Colab Runtime -> Change runtime type -> GPU (T4).")
-print("✅ GPU detected:", torch.cuda.get_device_name(0))
-
-# -------------------------
-# 2️⃣ Upload Dataset
-# -------------------------
-print("📁 Upload dataset (CSV 2-column, TXT tab-separated, or JSONL)")
+# -----------------------------
+# Upload dataset
+# -----------------------------
+print("📂 Upload CSV file (instruction, output)")
 uploaded = files.upload()
+file_name = list(uploaded.keys())[0]
 
-for filename in uploaded.keys():
-    print("✅ Uploaded:", filename)
-    if filename.endswith(".csv"):
-        df = pd.read_csv(filename)
-        data = [{"instruction": row[0], "input": "", "output": row[1]} for idx, row in df.iterrows()]
-    elif filename.endswith(".txt"):
-        with open(filename, "r", encoding="utf-8") as f:
-            lines = [line.strip().split("\t") for line in f.readlines()]
-            data = [{"instruction": l[0], "input": "", "output": l[1]} for l in lines]
-    elif filename.endswith(".jsonl"):
-        data = [json.loads(line) for line in open(filename)]
-    else:
-        raise ValueError("❌ Unsupported file format! Use CSV, TXT, or JSONL.")
+# -----------------------------
+# Load dataset
+# -----------------------------
+dataset = load_dataset("csv", data_files=file_name, split="train")
 
-# -------------------------
-# 3️⃣ Format Data
-# -------------------------
-def format_example(ex):
-    return f"""### Instruction:
-{ex['instruction']}
+def format_prompt(example):
+    return {
+        "text": f"""### Instruction:
+{example['instruction']}
 
 ### Response:
-{ex['output']}"""
+{example['output']}"""
+    }
 
-formatted_data = [format_example(d) for d in data]
+dataset = dataset.map(format_prompt)
 
-with open("formatted_data.jsonl", "w") as f:
-    for line in formatted_data:
-        f.write(line + "\n")
-print(f"✅ Formatted {len(formatted_data)} examples for training.")
-
-# -------------------------
-# 4️⃣ Load Model & Trainer
-# -------------------------
-model_name = BASE_MODELS.get(MODEL_CHOICE, "unsloth/Phi-3-mini-4k-instruct")
-print(f"📦 Loading model: {MODEL_CHOICE}")
-model = FastLanguageModel(model_name)
-
-trainer = Trainer(
-    model=model,
-    dataset="formatted_data.jsonl",
-    output_dir="merged_model",
-    epochs=EPOCHS,
-    batch_size=BATCH_SIZE,
-    lr=LR
+# -----------------------------
+# Load model (Unsloth)
+# -----------------------------
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=args.model,
+    max_seq_length=args.max_seq_length,
+    load_in_4bit=True
 )
-print("✅ Trainer ready.")
 
-# -------------------------
-# 5️⃣ Train
-# -------------------------
-print("🚀 Training started...")
+# -----------------------------
+# Apply LoRA
+# -----------------------------
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    lora_alpha=16,
+    lora_dropout=0.05,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+)
+
+# -----------------------------
+# Train
+# -----------------------------
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=dataset,
+    dataset_text_field="text",
+    max_seq_length=args.max_seq_length,
+    args=dict(
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=4,
+        num_train_epochs=args.epochs,
+        learning_rate=args.lr,
+        fp16=True,
+        output_dir="outputs",
+        logging_steps=10
+    )
+)
+
 trainer.train()
-print("✅ Training finished.")
 
-# -------------------------
-# 6️⃣ Merge LoRA
-# -------------------------
-print("🔗 Merging LoRA weights into base model...")
-merged_model = model.merge_and_unload()
-merged_model.save_pretrained("merged_model")
-print("✅ LoRA merged successfully!")
+# -----------------------------
+# 🔥 MERGE LoRA
+# -----------------------------
+model = model.merge_and_unload()
 
-# -------------------------
-# 7️⃣ Download
-# -------------------------
-shutil.make_archive("merged_model", 'zip', "merged_model")
+# -----------------------------
+# Save merged model
+# -----------------------------
+os.makedirs("merged_model", exist_ok=True)
+model.save_pretrained("merged_model")
+tokenizer.save_pretrained("merged_model")
+
+# -----------------------------
+# Zip & Download
+# -----------------------------
+os.system("zip -r merged_model.zip merged_model")
 files.download("merged_model.zip")
