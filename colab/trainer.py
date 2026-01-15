@@ -120,13 +120,16 @@ trainer.train()
 
 # ==============================
 # 6. Merge & save
-# ==============================
-model = FastLanguageModel.for_inference(model)
 
-model.save_pretrained_merged(
-    "merged_model",
-    tokenizer,
-    save_method="merged_16bit"
-)
 
-print("🎉 Training complete. Model merged and saved.")
+# Save locally and to Drive
+model.save_pretrained("customer_support_model")
+tokenizer.save_pretrained("customer_support_model")
+
+# If using Google Drive (mounted at /content/drive)
+model.save_pretrained("/content/drive/MyDrive/customer_support_model")
+tokenizer.save_pretrained("/content/drive/MyDrive/customer_support_model")
+
+print("Model saved!")
+print("Local: ./customer_support_model")
+print("Drive: /content/drive/MyDrive/customer_support_model")
