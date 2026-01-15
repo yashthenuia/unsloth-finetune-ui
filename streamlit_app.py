@@ -8,11 +8,10 @@ st.set_page_config(
 
 st.title("🦥 Unsloth Fine-Tuner")
 st.caption("Fine-tune small LLMs for FREE using Google Colab (T4 GPU)")
-
 st.divider()
 
 # -----------------------------
-# User inputs
+# User Inputs
 # -----------------------------
 model_name = st.selectbox(
     "Choose Base Model",
@@ -35,28 +34,24 @@ st.divider()
 st.subheader("🚀 Step 1: Open Google Colab")
 
 st.markdown(
-    """
-[👉 Open Colab Notebook (Free T4 GPU)](
-https://colab.research.google.com/github/YOUR_GITHUB_USERNAME/unsloth-finetune-ui/blob/main/colab/runner.ipynb
-)
-"""
+    "[👉 Open Colab Notebook (Free T4 GPU)](https://colab.research.google.com/github/YOUR_USERNAME/unsloth-finetune-ui/blob/main/colab/unsloth_finetune.ipynb)"
 )
 
 # -----------------------------
-# Command
+# Command for Colab
 # -----------------------------
 st.subheader("▶ Step 2: Run ONE command in Colab")
 
 command = f"""
-!python train.py \\
-  --model "{model_name}" \\
-  --epochs {epochs} \\
-  --batch_size {batch_size} \\
-  --lr {learning_rate}
+# Set hyperparameters
+export MODEL_CHOICE="{model_name}"
+export EPOCHS={epochs}
+export BATCH_SIZE={batch_size}
+export LR={learning_rate}
+
+# Run trainer
+python trainer.py
 """
 
 st.code(command, language="bash")
-
-st.success(
-    "Upload your dataset in Colab → Training starts → Download merged model ZIP"
-)
+st.success("Upload your dataset in Colab → Training starts → Download merged model ZIP")
